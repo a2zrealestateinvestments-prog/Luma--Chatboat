@@ -1,12 +1,23 @@
- name: Checkout
-    uses: actions/checkout@v4 # Esta ya es la v4, está bien.
+name: Deploy Chatbot
 
-  - name: Setup Node
-    uses: actions/setup-node@v4
-    with:
-      node-version: '24' # Cambia esto de 20 a 24
+on:
+  push:
+    branches:
+      - main
 
-  - name: Install and Build
-    run: |
-      npm install
-      npm run build
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24' # Aquí usamos la versión más reciente
+
+      - name: Instalar y Construir
+        run: |
+          npm install
+          npm run build
