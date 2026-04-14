@@ -32,18 +32,16 @@ export default function App() {
   const chatRef = useRef<any>(null);
    
 
-  useEffect(() => {
-    // Initializar el chat solo si ai existey no se ha creadoantes 
-    if (ai&&!chatRef.current) {
-      chatRef.current=ai.chats.create({
-        model:"gemini-3-flash-preview",
-        config:{
+ useEffect(() => {
+    if (ai && !chatRef.current) {
+      chatRef.current = ai.chats.create({
+        model: "gemini-3-flash-preview",
+        config: {
           systemInstruction: "Tu nombre es Luma. Eres una mujer sabia, cálida y comprensiva..."
         }
       });
     }
   }, [ai]);
-      const recognition = new SpeechRecognition();
       recognition.lang = 'es-ES';
       recognition.continuous = false;
       recognition.interimResults = false;
