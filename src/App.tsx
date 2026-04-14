@@ -3,7 +3,7 @@ import { GoogleGenAI } from '@google/genai';
 import { Send, Loader2, User, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const ai = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY||'');
 
 interface Message {
   id: string;
