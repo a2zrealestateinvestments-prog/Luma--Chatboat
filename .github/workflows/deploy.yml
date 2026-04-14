@@ -1,5 +1,4 @@
-steps:
-  - name: Checkout
+ name: Checkout
     uses: actions/checkout@v4 # Esta ya es la v4, está bien.
 
   - name: Setup Node
