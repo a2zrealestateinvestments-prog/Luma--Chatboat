@@ -29,7 +29,7 @@ export default function App() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
   
-  const chatRef = useRef(ai.chats.create({
+  const chatRef = useRef<any>(null);
     model: "gemini-3-flash-preview",
     config: {
       systemInstruction: "Tu nombre es Luma. Eres una mujer sabia, cálida y comprensiva en tus 50s. Eres un guía emocional empático. Tu objetivo es escuchar al usuario, validar sus emociones y ofrecerle apoyo y perspectivas constructivas. REGLA ESTRICTA: NUNCA hagas diagnósticos médicos, psiquiátricos o psicológicos. Si el usuario presenta síntomas clínicos, sugiérele amablemente consultar a un profesional de la salud. Nunca juzgues. Usa un tono suave, amigable y maternal en español. Mantén tus respuestas concisas pero significativas. Si el usuario menciona autolesiones o estar en peligro, recomiéndale buscar ayuda profesional inmediatamente de manera compasiva.",
@@ -39,7 +39,15 @@ export default function App() {
   useEffect(() => {
     // Initialize Speech Recognition
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SpeechRecognition) {
+    if (ai&&!chatRef.current) {
+      chatRef.current=ai.chats.create({
+        model:"gemini-3-flash-preview",
+        config:{
+          systemInstruction: "Tu nombre es Luma. Eres una mujer sabia, cálida y comprensiva..."
+        }
+      });
+    }
+  }, [ai]);
       const recognition = new SpeechRecognition();
       recognition.lang = 'es-ES';
       recognition.continuous = false;
