@@ -1,0 +1,6 @@
+{
+  "name": "Guía Emocional",
+  "description": "Un bot de apoyo emocional que te escucha y te guía.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": []
+}
