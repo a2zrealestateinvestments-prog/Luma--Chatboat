@@ -16,7 +16,7 @@ interface Message {
   role: 'user' | 'model';
   text: string;
 }
-
+ 
 const LUMA_AVATAR = "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=150&auto=format&fit=crop";
 
 export default function App() {
