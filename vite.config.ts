@@ -5,10 +5,9 @@ import {defineConfig, loadEnv} from 'vite';
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   
-  // For GitHub Pages, the base URL should be the repository name if it's a project site
-  // e.g., https://username.github.io/repo-name/ -> base: '/repo-name/'
-  // We'll leave it as default ('/') but it can be overridden via environment variable
-  const base = process.env.VITE_BASE_URL || '/';
+  // For GitHub Pages, using a relative base path ('./') ensures assets load correctly
+  // regardless of the repository name or if it's a user/project site.
+  const base = './';
 
   return {
     base,
