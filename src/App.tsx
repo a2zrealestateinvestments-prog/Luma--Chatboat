@@ -3,7 +3,24 @@ import { GoogleGenAI } from '@google/genai';
 import { Send, Loader2, User, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
-const apiKey = process.env.GEMINI_API_KEY || '';
+// Use import.meta.env for Vite. Fallback to process.env if defined (for AI Studio dev environment)
+const getApiKey = () => {
+  try {
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
+      // @ts-ignore
+      return import.meta.env.VITE_GEMINI_API_KEY;
+    }
+    if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) {
+      return process.env.GEMINI_API_KEY;
+    }
+  } catch (e) {
+    // Ignore errors
+  }
+  return '';
+};
+
+const apiKey = getApiKey();
 let ai: any = null;
 try {
   if (apiKey && apiKey !== 'MY_GEMINI_API_KEY') {
