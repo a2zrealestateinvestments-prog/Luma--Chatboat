@@ -70,7 +70,7 @@ export default function App() {
     // @ts-ignore
     const activeApiKey = isApiKeySet ? userApiKey : (import.meta.env?.VITE_GEMINI_API_KEY || process.env?.GEMINI_API_KEY);
     
-    if (!chatRef.current && activeApiKey && activeApiKey !== 'MY_GEMINI_API_KEY') {
+    if (activeApiKey && activeApiKey !== 'MY_GEMINI_API_KEY') {
       try {
         const ai = initializeAI(activeApiKey);
         if (ai) {
@@ -84,6 +84,8 @@ export default function App() {
       } catch (e) {
         console.error("Error creating chat:", e);
       }
+    } else {
+      chatRef.current = null;
     }
   }, [isApiKeySet, userApiKey]);
 
