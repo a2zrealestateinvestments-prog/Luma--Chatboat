@@ -1,4 +1,4 @@
-name: Install Dependencies
+- name: Install Dependencies
         run: npm install --legacy-peer-deps
 on:
   push:
