@@ -5,8 +5,7 @@ import {defineConfig, loadEnv} from 'vite';
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   
-  // For GitHub Pages, the base URL should be the repository name if it's a project site
-  // e.g., https://username.github.io/repo-name/ -> base: '/repo-name/'
+  // Use the exact repository name as the base path to prevent trailing slash issues
   const base = '/Luma--Chatboat/';
 
   return {

@@ -1,34 +1,15 @@
 import { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { Send, Loader2, User, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
+import { Send, Loader2, User, Mic, MicOff, Volume2, VolumeX, Settings, Key, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
-// Use import.meta.env for Vite. Fallback to process.env if defined (for AI Studio dev environment)
-const getApiKey = () => {
-  try {
-    // @ts-ignore
-    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
-      // @ts-ignore
-      return import.meta.env.VITE_GEMINI_API_KEY;
-    }
-    if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) {
-      return process.env.GEMINI_API_KEY;
-    }
-  } catch (e) {
-    // Ignore errors
-  }
-  return '';
-};
-
-const apiKey = getApiKey();
-let ai: any = null;
-try {
+// Initialize the AI client conditionally based on whether an API key is available
+const initializeAI = (apiKey: string | undefined) => {
   if (apiKey && apiKey !== 'MY_GEMINI_API_KEY') {
-    ai = new GoogleGenAI({ apiKey });
+    return new GoogleGenAI({ apiKey });
   }
-} catch (e) {
-  console.error("Error initializing Gemini API:", e);
-}
+  return null;
+};
 
 interface Message {
   id: string;
@@ -50,23 +31,61 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [userApiKey, setUserApiKey] = useState('');
+  const [isApiKeySet, setIsApiKeySet] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
   const chatRef = useRef<any>(null);
-  
-  if (!chatRef.current && ai) {
-    try {
-      chatRef.current = ai.chats.create({
-        model: "gemini-3-flash-preview",
-        config: {
-          systemInstruction: "Tu nombre es Luma. Eres una mujer sabia, cálida y comprensiva en tus 50s. Eres un guía emocional empático. Tu objetivo es escuchar al usuario, validar sus emociones y ofrecerle apoyo y perspectivas constructivas. REGLA ESTRICTA: NUNCA hagas diagnósticos médicos, psiquiátricos o psicológicos. Si el usuario presenta síntomas clínicos, sugiérele amablemente consultar a un profesional de la salud. Nunca juzgues. Usa un tono suave, amigable y maternal en español. Mantén tus respuestas concisas pero significativas. Si el usuario menciona autolesiones o estar en peligro, recomiéndale buscar ayuda profesional inmediatamente de manera compasiva.",
-        }
-      });
-    } catch (e) {
-      console.error("Error creating chat:", e);
+
+  // Check for saved API key on load
+  useEffect(() => {
+    const savedKey = localStorage.getItem('gemini_api_key');
+    if (savedKey) {
+      setUserApiKey(savedKey);
+      setIsApiKeySet(true);
     }
-  }
+  }, []);
+
+  const handleSaveApiKey = () => {
+    if (userApiKey.trim()) {
+      localStorage.setItem('gemini_api_key', userApiKey.trim());
+      setIsApiKeySet(true);
+      setShowSettings(false);
+      // Reset chat ref so it gets recreated with the new key
+      chatRef.current = null;
+    }
+  };
+
+  const handleClearApiKey = () => {
+    localStorage.removeItem('gemini_api_key');
+    setUserApiKey('');
+    setIsApiKeySet(false);
+    chatRef.current = null;
+  };
+  
+  // Initialize chat when API key is available
+  useEffect(() => {
+    // @ts-ignore
+    const activeApiKey = isApiKeySet ? userApiKey : (import.meta.env?.VITE_GEMINI_API_KEY || process.env?.GEMINI_API_KEY);
+    
+    if (!chatRef.current && activeApiKey && activeApiKey !== 'MY_GEMINI_API_KEY') {
+      try {
+        const ai = initializeAI(activeApiKey);
+        if (ai) {
+          chatRef.current = ai.chats.create({
+            model: "gemini-3-flash-preview",
+            config: {
+              systemInstruction: "Tu nombre es Luma. Eres una mujer sabia, cálida y comprensiva en tus 50s. Eres un guía emocional empático. Tu objetivo es escuchar al usuario, validar sus emociones y ofrecerle apoyo y perspectivas constructivas. REGLA ESTRICTA: NUNCA hagas diagnósticos médicos, psiquiátricos o psicológicos. Si el usuario presenta síntomas clínicos, sugiérele amablemente consultar a un profesional de la salud. Nunca juzgues. Usa un tono suave, amigable y maternal en español. Mantén tus respuestas concisas pero significativas. Si el usuario menciona autolesiones o estar en peligro, recomiéndale buscar ayuda profesional inmediatamente de manera compasiva.",
+            }
+          });
+        }
+      } catch (e) {
+        console.error("Error creating chat:", e);
+      }
+    }
+  }, [isApiKeySet, userApiKey]);
 
   useEffect(() => {
     // Initialize Speech Recognition
@@ -159,6 +178,14 @@ export default function App() {
     e?.preventDefault();
     if (!input.trim() || isLoading) return;
 
+    // @ts-ignore
+    const activeApiKey = isApiKeySet ? userApiKey : (import.meta.env?.VITE_GEMINI_API_KEY || process.env?.GEMINI_API_KEY);
+    
+    if (!activeApiKey || activeApiKey === 'MY_GEMINI_API_KEY') {
+      setShowSettings(true);
+      return;
+    }
+
     const userText = input.trim();
     setInput('');
     
@@ -171,11 +198,11 @@ export default function App() {
     setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
 
-    if (!ai || !chatRef.current) {
+    if (!chatRef.current) {
       setMessages(prev => [...prev, { 
         id: Date.now().toString(), 
         role: 'model', 
-        text: 'Lo siento, no puedo responder porque falta la clave de la API (GEMINI_API_KEY). Por favor, configúrala en los secretos de GitHub (Settings > Secrets and variables > Actions) y vuelve a ejecutar el despliegue.' 
+        text: 'Lo siento, no pude inicializar el chat. Por favor, verifica tu clave API.' 
       }]);
       setIsLoading(false);
       return;
@@ -223,17 +250,97 @@ export default function App() {
             <p className="text-sm text-[#6B6B6B]">Tu guía emocional</p>
           </div>
         </div>
-        <button 
-          onClick={() => {
-            setIsVoiceEnabled(!isVoiceEnabled);
-            if (isVoiceEnabled) window.speechSynthesis?.cancel();
-          }}
-          className={`p-2.5 rounded-full transition-colors ${isVoiceEnabled ? 'bg-[#E2E7D6] text-[#8E9775] hover:bg-[#d4dcc5]' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
-          title={isVoiceEnabled ? "Desactivar voz" : "Activar voz"}
-        >
-          {isVoiceEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
-        </button>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={() => setShowSettings(true)}
+            className="p-2.5 rounded-full transition-colors bg-slate-100 text-slate-400 hover:bg-slate-200"
+            title="Configuración de API"
+          >
+            <Settings size={20} />
+          </button>
+          <button 
+            onClick={() => {
+              setIsVoiceEnabled(!isVoiceEnabled);
+              if (isVoiceEnabled) window.speechSynthesis?.cancel();
+            }}
+            className={`p-2.5 rounded-full transition-colors ${isVoiceEnabled ? 'bg-[#E2E7D6] text-[#8E9775] hover:bg-[#d4dcc5]' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
+            title={isVoiceEnabled ? "Desactivar voz" : "Activar voz"}
+          >
+            {isVoiceEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
+          </button>
+        </div>
       </header>
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+            <div className="flex items-center justify-between p-5 border-b border-gray-100">
+              <h2 className="text-lg font-semibold text-[#2D2D2D] flex items-center gap-2">
+                <Key className="w-5 h-5 text-[#8E9775]" />
+                Configuración
+              </h2>
+              <button 
+                onClick={() => setShowSettings(false)}
+                className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-6">
+              <p className="text-sm text-[#6B6B6B] mb-5">
+                Para hablar con Luma, necesitas una clave API gratuita de Google Gemini. 
+                Tus datos se guardan de forma segura <strong>solo en tu navegador</strong>.
+              </p>
+              
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="apiKey" className="block text-sm font-medium text-[#2D2D2D] mb-1.5">
+                    Clave API de Gemini
+                  </label>
+                  <input
+                    type="password"
+                    id="apiKey"
+                    value={userApiKey}
+                    onChange={(e) => setUserApiKey(e.target.value)}
+                    placeholder="AIzaSy..."
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#8E9775] focus:border-[#8E9775] outline-none transition-all text-[#2D2D2D]"
+                  />
+                </div>
+                
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={handleSaveApiKey}
+                    className="flex-1 bg-[#8E9775] hover:bg-[#7A8265] text-white font-medium py-2.5 px-4 rounded-xl transition-colors"
+                  >
+                    Guardar Clave
+                  </button>
+                  {isApiKeySet && (
+                    <button
+                      onClick={handleClearApiKey}
+                      className="px-4 py-2.5 text-red-500 hover:bg-red-50 font-medium rounded-xl transition-colors border border-red-100"
+                    >
+                      Borrar
+                    </button>
+                  )}
+                </div>
+                
+                <div className="mt-5 text-xs text-center">
+                  <a 
+                    href="https://aistudio.google.com/app/apikey" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-[#8E9775] hover:underline font-medium"
+                  >
+                    ¿No tienes una clave? Consíguela gratis aquí
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Chat Area */}
       <main className="flex-1 overflow-y-auto p-4 sm:p-8 space-y-6">
