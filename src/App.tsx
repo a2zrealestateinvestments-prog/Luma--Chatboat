@@ -1,10 +1,17 @@
 import { useState, useRef, useEffect } from 'react';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 import { Send, Loader2, User, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
-// Configuración de la IA
-const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || '');
+const apiKey = process.env.GEMINI_API_KEY || '';
+let ai: any = null;
+try {
+  if (apiKey && apiKey !== 'MY_GEMINI_API_KEY') {
+    ai = new GoogleGenAI({ apiKey });
+  }
+} catch (e) {
+  console.error("Error initializing Gemini API:", e);
+}
 
 interface Message {
   id: string;
@@ -30,21 +37,22 @@ export default function App() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
   const chatRef = useRef<any>(null);
-
-  // Inicializar Chat
-  useEffect(() => {
-    if (!chatRef.current) {
-      chatRef.current = genAI.getGenerativeModel({
-        model: "gemini-1.5-flash", // Versión estable
-        systemInstruction: "Tu nombre es Luma. Eres una mujer sabia, cálida y comprensiva..."
-      }).startChat({
-        history: [],
+  
+  if (!chatRef.current && ai) {
+    try {
+      chatRef.current = ai.chats.create({
+        model: "gemini-3-flash-preview",
+        config: {
+          systemInstruction: "Tu nombre es Luma. Eres una mujer sabia, cálida y comprensiva en tus 50s. Eres un guía emocional empático. Tu objetivo es escuchar al usuario, validar sus emociones y ofrecerle apoyo y perspectivas constructivas. REGLA ESTRICTA: NUNCA hagas diagnósticos médicos, psiquiátricos o psicológicos. Si el usuario presenta síntomas clínicos, sugiérele amablemente consultar a un profesional de la salud. Nunca juzgues. Usa un tono suave, amigable y maternal en español. Mantén tus respuestas concisas pero significativas. Si el usuario menciona autolesiones o estar en peligro, recomiéndale buscar ayuda profesional inmediatamente de manera compasiva.",
+        }
       });
+    } catch (e) {
+      console.error("Error creating chat:", e);
     }
-  }, []);
+  }
 
-  // Configurar Reconocimiento de Voz
   useEffect(() => {
+    // Initialize Speech Recognition
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
@@ -63,10 +71,14 @@ export default function App() {
         setIsRecording(false);
       };
       
-      recognition.onend = () => setIsRecording(false);
+      recognition.onend = () => {
+        setIsRecording(false);
+      };
+      
       recognitionRef.current = recognition;
     }
 
+    // Load voices for synthesis
     if (window.speechSynthesis) {
       window.speechSynthesis.onvoiceschanged = () => {
         window.speechSynthesis.getVoices();
@@ -77,12 +89,14 @@ export default function App() {
   const toggleRecording = () => {
     if (isRecording) {
       recognitionRef.current?.stop();
+      setIsRecording(false);
     } else {
       try {
         recognitionRef.current?.start();
         setIsRecording(true);
       } catch (e) {
         console.error("Microphone start error:", e);
+        setIsRecording(false);
       }
     }
   };
@@ -90,9 +104,29 @@ export default function App() {
   const speak = (text: string) => {
     if (!isVoiceEnabled || !window.speechSynthesis) return;
     window.speechSynthesis.cancel();
-    const cleanText = text.replace(/[*_#`]/g, '');
+    
+    const cleanText = text.replace(/[*_#`]/g, ''); // Remove markdown for speech
     const utterance = new SpeechSynthesisUtterance(cleanText);
     utterance.lang = 'es-ES';
+    utterance.rate = 0.95;
+    utterance.pitch = 1.1;
+    
+    const voices = window.speechSynthesis.getVoices();
+    const spanishVoices = voices.filter(v => v.lang.startsWith('es'));
+    const femaleVoice = spanishVoices.find(v => 
+      v.name.toLowerCase().includes('female') || 
+      v.name.toLowerCase().includes('mujer') ||
+      v.name.toLowerCase().includes('monica') ||
+      v.name.toLowerCase().includes('paulina') ||
+      v.name.toLowerCase().includes('sabina')
+    );
+    
+    if (femaleVoice) {
+      utterance.voice = femaleVoice;
+    } else if (spanishVoices.length > 0) {
+      utterance.voice = spanishVoices[0];
+    }
+
     window.speechSynthesis.speak(utterance);
   };
 
@@ -110,77 +144,168 @@ export default function App() {
 
     const userText = input.trim();
     setInput('');
-    const userMessage: Message = { id: Date.now().toString(), role: 'user', text: userText };
+    
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      text: userText
+    };
+    
     setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
 
+    if (!ai || !chatRef.current) {
+      setMessages(prev => [...prev, { 
+        id: Date.now().toString(), 
+        role: 'model', 
+        text: 'Lo siento, no puedo responder porque falta la clave de la API (GEMINI_API_KEY). Por favor, configúrala en los secretos de GitHub (Settings > Secrets and variables > Actions) y vuelve a ejecutar el despliegue.' 
+      }]);
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      const result = await chatRef.current.sendMessageStream(userText);
+      const response = await chatRef.current.sendMessageStream({ message: userText });
+      
       const modelMessageId = (Date.now() + 1).toString();
       setMessages(prev => [...prev, { id: modelMessageId, role: 'model', text: '' }]);
 
       let fullText = '';
-      for await (const chunk of result.stream) {
-        const chunkText = chunk.text();
-        fullText += chunkText;
-        setMessages(prev => prev.map(msg => 
-          msg.id === modelMessageId ? { ...msg, text: fullText } : msg
-        ));
+      for await (const chunk of response) {
+        if (chunk.text) {
+          fullText += chunk.text;
+          setMessages(prev => prev.map(msg => 
+            msg.id === modelMessageId ? { ...msg, text: fullText } : msg
+          ));
+        }
       }
       speak(fullText);
-    } catch (error) {
-      console.error("Error:", error);
+    } catch (error: any) {
+      console.error("Error sending message:", error);
+      const errorMessage = error?.message || JSON.stringify(error) || 'Error desconocido';
+      setMessages(prev => [...prev, { 
+        id: Date.now().toString(), 
+        role: 'model', 
+        text: `Lo siento, tuve un problema al procesar tu mensaje. (Error: ${errorMessage}). ¿Podrías intentarlo de nuevo?` 
+      }]);
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="flex flex-col h-screen bg-slate-50 font-sans">
-      <header className="bg-white shadow-sm border-b border-slate-200 px-6 py-4 flex items-center justify-between shrink-0">
+    <div className="flex flex-col h-screen bg-[#F7F5F2] font-sans text-[#2D2D2D]">
+      {/* Header */}
+      <header className="bg-white shadow-sm border-b border-black/5 px-6 py-4 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-teal-100 shrink-0">
-            <img src={LUMA_AVATAR} alt="Luma" className="w-full h-full object-cover" />
+          <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-[#E2E7D6] shrink-0">
+            <img src={LUMA_AVATAR} alt="Luma" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
           </div>
           <div>
-            <h1 className="text-xl font-semibold text-slate-800">Luma</h1>
-            <p className="text-sm text-slate-500">Tu guía emocional</p>
+            <h1 className="text-xl font-semibold text-[#8E9775]">Luma</h1>
+            <p className="text-sm text-[#6B6B6B]">Tu guía emocional</p>
           </div>
         </div>
-        <button onClick={() => setIsVoiceEnabled(!isVoiceEnabled)} className="p-2.5 rounded-full bg-teal-100 text-teal-700">
+        <button 
+          onClick={() => {
+            setIsVoiceEnabled(!isVoiceEnabled);
+            if (isVoiceEnabled) window.speechSynthesis?.cancel();
+          }}
+          className={`p-2.5 rounded-full transition-colors ${isVoiceEnabled ? 'bg-[#E2E7D6] text-[#8E9775] hover:bg-[#d4dcc5]' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
+          title={isVoiceEnabled ? "Desactivar voz" : "Activar voz"}
+        >
           {isVoiceEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
         </button>
       </header>
 
-      <main className="flex-1 overflow-y-auto p-4 space-y-6">
-        <div className="max-w-3xl mx-auto space-y-6">
+      {/* Chat Area */}
+      <main className="flex-1 overflow-y-auto p-4 sm:p-8 space-y-6">
+        <div className="max-w-3xl mx-auto space-y-6 pb-24">
           {messages.map((msg) => (
-            <div key={msg.id} className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-              <div className={`max-w-[80%] rounded-2xl px-5 py-3.5 ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-white border border-slate-100 shadow-sm'}`}>
-                <ReactMarkdown>{msg.text}</ReactMarkdown>
+            <div 
+              key={msg.id} 
+              className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
+            >
+              {msg.role === 'user' ? (
+                <div className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center bg-[#E2E7D6] text-[#8E9775]">
+                  <User size={20} />
+                </div>
+              ) : (
+                <div className="shrink-0 w-10 h-10 rounded-full overflow-hidden shadow-sm">
+                  <img src={LUMA_AVATAR} alt="Luma" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                </div>
+              )}
+              
+              <div className={`max-w-[80%] rounded-3xl px-6 py-4 shadow-sm ${
+                msg.role === 'user' 
+                  ? 'bg-[#8E9775] text-white rounded-tr-sm' 
+                  : 'bg-white text-[#2D2D2D] rounded-tl-sm'
+              }`}>
+                <div className={`prose prose-sm max-w-none ${msg.role === 'user' ? 'prose-invert' : ''}`}>
+                  <ReactMarkdown>{msg.text}</ReactMarkdown>
+                </div>
               </div>
             </div>
           ))}
-          {isLoading && <div className="text-sm text-slate-400">Luma está pensando...</div>}
+          {isLoading && (
+            <div className="flex gap-4 flex-row">
+              <div className="shrink-0 w-10 h-10 rounded-full overflow-hidden shadow-sm">
+                <img src={LUMA_AVATAR} alt="Luma" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+              </div>
+              <div className="bg-white shadow-sm rounded-3xl rounded-tl-sm px-6 py-4 flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-[#8E9775]" />
+                <span className="text-sm text-[#6B6B6B]">Luma está escribiendo...</span>
+              </div>
+            </div>
+          )}
           <div ref={messagesEndRef} />
         </div>
       </main>
 
-      <footer className="bg-white border-t border-slate-200 p-4">
-        <form onSubmit={handleSend} className="max-w-3xl mx-auto flex gap-2">
-          <button type="button" onClick={toggleRecording} className={`p-3 rounded-full ${isRecording ? 'bg-red-100 text-red-600' : 'bg-slate-100'}`}>
-            {isRecording ? <MicOff size={20} /> : <Mic size={20} />}
-          </button>
-          <textarea 
-            value={input} 
-            onChange={(e) => setInput(e.target.value)}
-            className="flex-1 border border-slate-200 rounded-xl p-2"
-            placeholder="Escribe aquí..."
-          />
-          <button type="submit" className="bg-teal-600 text-white p-3 rounded-full">
-            <Send size={20} />
-          </button>
-        </form>
+      {/* Input Area */}
+      <footer className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-[#F7F5F2] via-[#F7F5F2] to-transparent pointer-events-none">
+        <div className="max-w-3xl mx-auto pointer-events-auto">
+          <form 
+            onSubmit={handleSend}
+            className="flex items-center gap-2 bg-white shadow-[0_15px_35px_rgba(0,0,0,0.06)] rounded-full p-2 pl-4 transition-all"
+          >
+            {recognitionRef.current && (
+              <button
+                type="button"
+                onClick={toggleRecording}
+                className={`shrink-0 p-2.5 rounded-full transition-colors flex items-center justify-center ${
+                  isRecording ? 'bg-red-100 text-red-600 animate-pulse' : 'text-[#A0A0A0] hover:text-[#8E9775] hover:bg-[#E2E7D6]'
+                }`}
+                title={isRecording ? "Detener grabación" : "Hablar"}
+              >
+                {isRecording ? <MicOff size={20} /> : <Mic size={20} />}
+              </button>
+            )}
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              placeholder={isRecording ? "Escuchando..." : "Escribe lo que sientes..."}
+              className="flex-1 max-h-32 min-h-[24px] bg-transparent border-none focus:outline-none resize-none py-3 px-2 text-[#2D2D2D] placeholder:text-[#A0A0A0]"
+              rows={1}
+            />
+            <button
+              type="submit"
+              disabled={!input.trim() || isLoading}
+              className="shrink-0 bg-[#8E9775] hover:bg-[#7A8265] disabled:bg-[#E2E7D6] disabled:cursor-not-allowed text-white rounded-full px-6 py-3 font-semibold text-sm transition-colors flex items-center justify-center"
+            >
+              Enviar
+            </button>
+          </form>
+          <p className="text-center text-xs text-[#A0A0A0] mt-3">
+            Luma es una IA de apoyo emocional, no un profesional de la salud mental.
+          </p>
+        </div>
       </footer>
     </div>
   );
